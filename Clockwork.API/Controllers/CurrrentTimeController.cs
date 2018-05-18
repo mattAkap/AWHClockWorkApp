@@ -1,41 +1,111 @@
 ﻿using System;
 using Microsoft.AspNetCore.Mvc;
 using Clockwork.API.Models;
+using System.Collections.Generic;
+using System.Linq;
+using Clockwork.API.Services;
 
 namespace Clockwork.API.Controllers
 {
-    [Route("api/[controller]")]
     public class CurrentTimeController : Controller
     {
+        [Route("api/[controller]/latest")]
         // GET api/currenttime
         [HttpGet]
         public IActionResult Get()
         {
-            var utcTime = DateTime.UtcNow;
-            var serverTime = DateTime.Now;
-            var ip = this.HttpContext.Connection.RemoteIpAddress.ToString();
-
-            var returnVal = new CurrentTimeQuery
+            try
             {
-                UTCTime = utcTime,
-                ClientIp = ip,
-                Time = serverTime
-            };
+                var utcTime = DateTime.UtcNow;
+                var serverTime = TimeLordService.ConvertTime(DateTime.UtcNow, TimeLordService.CurrentTimeZone);
+                var ip = this.HttpContext.Connection.RemoteIpAddress.ToString();
 
-            using (var db = new ClockworkContext())
-            {
-                db.CurrentTimeQueries.Add(returnVal);
-                var count = db.SaveChanges();
-                Console.WriteLine("{0} records saved to database", count);
-
-                Console.WriteLine();
-                foreach (var CurrentTimeQuery in db.CurrentTimeQueries)
+                var returnVal = new CurrentTimeQuery
                 {
-                    Console.WriteLine(" - {0}", CurrentTimeQuery.UTCTime);
-                }
-            }
+                    UTCTime = utcTime,
+                    ClientIp = ip,
+                    Time = serverTime
+                };
 
-            return Ok(returnVal);
+                using (var db = new ClockworkContext())
+                {
+                    db.CurrentTimeQueries.Add(returnVal);
+                    var count = db.SaveChanges();
+                    Console.WriteLine("{0} records saved to database", count);
+
+                    Console.WriteLine();
+                    foreach (var CurrentTimeQuery in db.CurrentTimeQueries)
+                    {
+                        Console.WriteLine(" - {0}", CurrentTimeQuery.UTCTime);
+                    }
+                }
+
+                return Ok(returnVal);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ex.Message);
+            }
+        }
+
+        // GET api/currenttime
+        [Route("api/[controller]/all")]
+        [HttpGet]
+        public IActionResult GetAll()
+        {
+            try
+            {
+                var returnVal = new List<CurrentTimeQuery>();
+
+                using (var db = new ClockworkContext())
+                {
+                    returnVal.AddRange(db.CurrentTimeQueries.ToList());
+                }
+
+                return Ok(returnVal);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ex.Message);
+            }
+        }
+
+        [Route("api/update/{timeZone}")]
+        [HttpGet]
+        public IActionResult UpdateTimeZone(string timeZone)
+        {
+            try
+            {
+                TimeLordService.CurrentTimeZone = Uri.UnescapeDataString(timeZone);
+
+                using (var db = new ClockworkContext())
+                {
+                    foreach (var entry in db.CurrentTimeQueries)
+                        entry.Time = TimeLordService.ConvertTime(entry.UTCTime, TimeLordService.CurrentTimeZone);
+
+                    db.SaveChanges();
+                }
+
+                return Ok(timeZone);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ex.Message);
+            }
+        }
+
+        [Route("api/timeZones")]
+        [HttpGet]
+        public IActionResult GetAllTimeZones()
+        {
+            try
+            {
+                return Ok(NodaTime.DateTimeZoneProviders.Tzdb.Ids);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ex.Message);
+            }
         }
     }
 }
